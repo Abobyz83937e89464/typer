@@ -40,7 +40,7 @@
 <body>
 
 <div class="sidebar" id="chatList">
-    <div class="loader">Загрузка чатов из Telegram...</div>
+    <div class="loader">Ожидание сообщений...</div>
 </div>
 
 <div class="main">
@@ -49,6 +49,7 @@
 </div>
 
 <script>
+    // Твой актуальный конфиг базы
     const firebaseConfig = {
         apiKey: "AIzaSyAOt8uJppnWr5CSQUx9rO2gmo77P_SQM4Y",
         authDomain: "typing-939e2.firebaseapp.com",
@@ -64,7 +65,7 @@
     
     let selectedChatId = null;
 
-    // Подгружаем список чатов
+    // Подгружаем список чатов в реальном времени
     db.ref('chats/list').on('value', (snapshot) => {
         const chats = snapshot.val();
         const listDiv = document.getElementById('chatList');
@@ -75,27 +76,35 @@
                 const chat = chats[id];
                 const div = document.createElement('div');
                 div.className = 'chat-item';
-                div.innerText = chat.name;
-                div.onclick = () => selectChat(id, chat.name, div);
+                // Если бот уже обновил код, здесь будет имя чата
+                div.innerText = chat.name || "Чат " + id;
+                div.onclick = () => selectChat(id, chat.name || id, div);
                 listDiv.appendChild(div);
             });
+        } else {
+            listDiv.innerHTML = "<div class='loader'>Чатов пока нет. Напиши что-то боту.</div>";
         }
     });
 
     function selectChat(id, name, element) {
         selectedChatId = id;
+        // Визуальное выделение
         document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('active'));
         element.classList.add('active');
+        
+        // Обновление интерфейса
         document.getElementById('targetName').innerText = "ЦЕЛЬ: " + name;
         document.getElementById('sendBtn').disabled = false;
         
-        // Записываем ID текущей цели в базу для бота
+        // Записываем ID выбранного чата в базу для бота
         db.ref('commands/target_id').set(id);
     }
 
     document.getElementById('sendBtn').onclick = () => {
         if (selectedChatId) {
+            // Шлем сигнал боту на выполнение действия
             db.ref('commands/trigger').set(Date.now());
+            console.log("Сигнал ПУСК отправлен для ID:", selectedChatId);
         }
     };
 </script>

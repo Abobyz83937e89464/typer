@@ -3,108 +3,76 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Typing Control Panel v2</title>
+    <title>Control Panel</title>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <style>
-        body { background: #080808; color: #00ff41; font-family: 'Consolas', monospace; display: flex; height: 100vh; margin: 0; }
-        
-        /* Список чатов слева */
-        .sidebar { 
-            width: 320px; background: #0f0f0f; border-right: 2px solid #1a1a1a; 
-            display: flex; flex-direction: column; overflow-y: auto;
-        }
-        .chat-item { 
-            padding: 15px; border-bottom: 1px solid #1a1a1a; cursor: pointer; 
-            transition: 0.2s; font-size: 14px; color: #888;
-        }
-        .chat-item:hover { background: #1a1a1a; color: #fff; }
-        .chat-item.active { background: #1a1a1a; color: #00ff41; border-left: 4px solid #00ff41; }
-
-        /* Основная часть */
-        .main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
-        
+        body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; display: flex; height: 100vh; margin: 0; overflow: hidden; }
+        .sidebar { width: 300px; background: #0a0a0a; border-right: 1px solid #222; overflow-y: auto; }
+        .chat-item { padding: 12px; border-bottom: 1px solid #111; cursor: pointer; color: #666; font-size: 13px; }
+        .chat-item:hover { background: #111; color: #eee; }
+        .chat-item.active { background: #1a1a1a; color: #00ff41; border-left: 3px solid #00ff41; }
+        .main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
         #sendBtn {
-            width: 250px; height: 250px; border-radius: 50%; border: 4px solid #333;
-            background: radial-gradient(circle, #ff0000 0%, #800000 100%);
-            color: white; font-size: 30px; font-weight: bold; cursor: pointer;
-            box-shadow: 0 0 30px rgba(255, 0, 0, 0.3); transition: 0.1s;
+            width: 220px; height: 220px; border-radius: 50%; border: none;
+            background: radial-gradient(circle, #ff1111 0%, #880000 100%);
+            color: #fff; font-size: 24px; font-weight: bold; cursor: pointer;
+            box-shadow: 0 0 40px rgba(255, 0, 0, 0.2); transition: 0.1s;
         }
-        #sendBtn:active { transform: scale(0.92); box-shadow: 0 0 10px rgba(255, 0, 0, 0.5); }
-        #sendBtn:disabled { filter: grayscale(1); cursor: not-allowed; opacity: 0.5; }
-
-        .current-target { position: absolute; top: 20px; font-size: 18px; color: #fff; }
-        .loader { font-size: 12px; color: #555; padding: 20px; }
+        #sendBtn:active { transform: scale(0.95); box-shadow: 0 0 10px rgba(255, 0, 0, 0.5); }
+        #sendBtn:disabled { filter: grayscale(1); opacity: 0.3; cursor: not-allowed; }
+        .status { margin-bottom: 20px; font-size: 14px; text-transform: uppercase; letter-spacing: 2px; }
     </style>
 </head>
 <body>
 
-<div class="sidebar" id="chatList">
-    <div class="loader">Ожидание сообщений...</div>
-</div>
+<div class="sidebar" id="chatList"></div>
 
 <div class="main">
-    <div class="current-target" id="targetName">ЦЕЛЬ НЕ ВЫБРАНА</div>
+    <div class="status" id="targetName">ВЫБЕРИТЕ ЧАТ</div>
     <button id="sendBtn" disabled>ПУСК</button>
 </div>
 
 <script>
-    // Твой актуальный конфиг базы
     const firebaseConfig = {
         apiKey: "AIzaSyAOt8uJppnWr5CSQUx9rO2gmo77P_SQM4Y",
         authDomain: "typing-939e2.firebaseapp.com",
         projectId: "typing-939e2",
         databaseURL: "https://typing-939e2-default-rtdb.firebaseio.com/",
-        storageBucket: "typing-939e2.firebasestorage.app",
-        messagingSenderId: "707148868078",
         appId: "1:707148868078:web:96873ff3eef04297e9c6ff"
     };
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
-    
-    let selectedChatId = null;
+    let selectedId = null;
 
-    // Подгружаем список чатов в реальном времени
-    db.ref('chats/list').on('value', (snapshot) => {
-        const chats = snapshot.val();
+    // Слушаем список чатов в реальном времени
+    db.ref('chats/list').on('value', (snap) => {
+        const chats = snap.val();
         const listDiv = document.getElementById('chatList');
         listDiv.innerHTML = "";
-        
         if (chats) {
             Object.keys(chats).forEach(id => {
-                const chat = chats[id];
                 const div = document.createElement('div');
-                div.className = 'chat-item';
-                // Если бот уже обновил код, здесь будет имя чата
-                div.innerText = chat.name || "Чат " + id;
-                div.onclick = () => selectChat(id, chat.name || id, div);
+                div.className = 'chat-item' + (selectedId === id ? ' active' : '');
+                div.innerText = chats[id].name;
+                div.onclick = () => {
+                    selectedId = id;
+                    document.getElementById('targetName').innerText = "ЦЕЛЬ: " + chats[id].name;
+                    document.getElementById('sendBtn').disabled = false;
+                    db.ref('commands/target_id').set(id);
+                    // Перерисовка активного класса
+                    document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('active'));
+                    div.classList.add('active');
+                };
                 listDiv.appendChild(div);
             });
-        } else {
-            listDiv.innerHTML = "<div class='loader'>Чатов пока нет. Напиши что-то боту.</div>";
         }
     });
 
-    function selectChat(id, name, element) {
-        selectedChatId = id;
-        // Визуальное выделение
-        document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('active'));
-        element.classList.add('active');
-        
-        // Обновление интерфейса
-        document.getElementById('targetName').innerText = "ЦЕЛЬ: " + name;
-        document.getElementById('sendBtn').disabled = false;
-        
-        // Записываем ID выбранного чата в базу для бота
-        db.ref('commands/target_id').set(id);
-    }
-
     document.getElementById('sendBtn').onclick = () => {
-        if (selectedChatId) {
-            // Шлем сигнал боту на выполнение действия
+        if (selectedId) {
             db.ref('commands/trigger').set(Date.now());
-            console.log("Сигнал ПУСК отправлен для ID:", selectedChatId);
         }
     };
 </script>

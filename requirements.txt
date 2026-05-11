@@ -1,0 +1,4 @@
+telethon
+firebase-admin
+flask
+gunicorn

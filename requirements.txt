@@ -1,5 +1,4 @@
 telethon
-firebase-admin
+requests
 flask
 gunicorn
-cryptography==42.0.5

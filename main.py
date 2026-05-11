@@ -14,7 +14,7 @@ logger = logging.getLogger("TURBO_BOT")
 # --- КОНФИГУРАЦИЯ ---
 API_ID = 38696066
 API_HASH = '0018e2c1689dc0a9bb1490a09e14f0cc'
-SESSION_NAME = 'Session_name'
+SESSION_NAME = 'session_name'
 DB_URL = "https://typing-939e2-default-rtdb.firebaseio.com"
 
 app = Flask(__name__)

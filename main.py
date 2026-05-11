@@ -1,80 +1,87 @@
-import asyncio
-import random
 import os
-import firebase_admin
-from firebase_admin import credentials, db
-from telethon import TelegramClient, functions, types
+import asyncio
 from flask import Flask
 from threading import Thread
+from telethon import TelegramClient
+import firebase_admin
+from firebase_admin import credentials, db
 
 # --- НАСТРОЙКИ ---
-API_ID = 38696066
-API_HASH = '0018e2c1689dc0a9bb1490a09e14f0cc'
+API_ID = 24391694  # Твой API ID
+API_HASH = '1f654f6760f9e1e27a6971169c9b7405'
+SESSION_NAME = 'session_name' # Убедись, что файл .session лежит в корне
 DB_URL = 'https://typing-939e2-default-rtdb.firebaseio.com/'
-RUS_CHARS = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
 
+# --- ИНИЦИАЛИЗАЦИЯ FIREBASE ---
+try:
+    if not firebase_admin._apps:
+        cred = credentials.Certificate('firebase_key.json')
+        firebase_admin.initialize_app(cred, {'databaseURL': DB_URL})
+    print("✅ [FIREBASE] Подключение успешно установлено")
+except Exception as e:
+    print(f"❌ [FIREBASE] Ошибка инициализации: {e}")
+
+# --- FLASK (для Render) ---
 app = Flask(__name__)
+
 @app.route('/')
-def home(): return "Бот работает"
+def home():
+    return "Бот работает и логирует данные."
 
-if not firebase_admin._apps:
-    cred = credentials.Certificate("firebase_key.json")
-    firebase_admin.initialize_app(cred, {'databaseURL': DB_URL})
+def run_flask():
+    app.run(host='0.0.0.0', port=10000)
 
-client = TelegramClient('session_name', API_ID, API_HASH)
-
-def add_noise(text):
-    pos = random.randint(0, len(text))
-    return text[:pos] + random.choice(RUS_CHARS) + text[pos:]
+# --- ЛОГИКА ТЕЛЕГРАМА ---
+client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
 async def sync_chats():
-    """Отправляет список последних 20 чатов в Firebase"""
-    print("🔄 Синхронизация чатов...")
-    dialogs = await client.get_dialogs(limit=20)
-    chat_data = {}
-    for d in dialogs:
-        chat_data[str(d.id)] = {"name": d.name}
-    db.reference('chats/list').set(chat_data)
-    print("✅ Список чатов обновлен в базе")
-
-async def send_msg():
-    # 1. Получаем ID цели из базы
-    target_id = db.reference('commands/target_id').get()
-    if not target_id:
-        print("❌ Цель не выбрана в интерфейсе")
+    await client.connect()
+    
+    if not await client.is_user_authorized():
+        print("❌ [TELEGRAM] Ошибка: Сессия не авторизована! Залей актуальный .session файл.")
         return
 
-    # 2. Читаем текст
-    if not os.path.exists('txt.txt'): return
-    with open('txt.txt', 'r', encoding='utf-8') as f:
-        lines = [l.strip() for l in f if l.strip()]
-    
-    if not lines: return
-    msg = random.choice(lines).lower()
-    msg = add_noise(msg)
-    if random.random() < 0.3: msg += "/"
+    print("✅ [TELEGRAM] Бот успешно авторизован")
 
-    try:
-        # Превращаем ID обратно в число (Firebase хранит ключи как строки)
-        entity = await client.get_input_entity(int(target_id))
-        async with client.action(entity, 'typing'):
-            await asyncio.sleep(0.4)
-            await client.send_message(entity, msg)
-            print(f"🔥 ПУЛЬНУЛ В {target_id}: {msg}")
-    except Exception as e:
-        print(f"Ошибка: {e}")
+    while True:
+        try:
+            print("🔍 [SYNC] Начинаю сбор чатов...")
+            chats_data = {}
+            count = 0
+            
+            async for dialog in client.iter_dialogs():
+                # Собираем только группы и супергруппы для примера
+                if dialog.is_group or dialog.is_channel:
+                    chats_data[str(dialog.id)] = {
+                        "name": dialog.name,
+                        "unread_count": dialog.unread_count
+                    }
+                    count += 1
+            
+            if chats_data:
+                db.reference('chats').set(chats_data)
+                print(f"🚀 [SYNC] Успешно! Загружено чатов: {count}")
+            else:
+                print("⚠️ [SYNC] Чаты не найдены. Проверь аккаунт.")
+                db.reference('status').set({"error": "No chats found", "time": "now"})
 
-def db_listener(event):
-    if event.data:
-        asyncio.run_coroutine_threadsafe(send_msg(), bot_loop)
+        except Exception as e:
+            print(f"❌ [SYNC] Критическая ошибка при обновлении базы: {e}")
+            try:
+                db.reference('errors').push({"msg": str(e)})
+            except:
+                pass
+        
+        await asyncio.sleep(60) # Обновление раз в минуту
 
-async def start_bot():
-    await client.start()
-    await sync_chats() # При запуске обновляем список чатов
-    db.reference('commands/trigger').listen(db_listener)
+async def main():
+    print("🎬 Запуск основного цикла...")
+    await sync_chats()
 
 if __name__ == '__main__':
-    Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))).start()
-    bot_loop = asyncio.get_event_loop()
-    bot_loop.create_task(start_bot())
-    bot_loop.run_forever()
+    # Запускаем веб-сервер в отдельном потоке
+    Thread(target=run_flask).start()
+    
+    # Запускаем Телеграм
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())

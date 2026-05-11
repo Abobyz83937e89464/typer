@@ -1,81 +1,97 @@
 import os
-import asyncio
+import json
 import logging
+import asyncio
 from flask import Flask
-from telethon import TelegramClient
+from threading import Thread
+from telethon import TelegramClient, events
 import firebase_admin
 from firebase_admin import credentials, db
 
-# Настройка логирования (Render подхватит это сразу)
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+# 1. Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# --- КОНФИГ ---
-API_ID = 24391694
-API_HASH = '1f654f6760f9e1e27a6971169c9b7405'
-SESSION_NAME = 'session_name' 
-DB_URL = 'https://typing-939e2-default-rtdb.firebaseio.com/'
+# 2. Конфигурация (замени своими данными)
+API_ID = 1234567  # Твой API ID
+API_HASH = 'твой_api_hash'
+SESSION_NAME = 'session_name' # Убедись, что файл .session загружен
+DATABASE_URL = 'https://твой-проект.firebaseio.com/' 
 
-# --- FIREBASE ---
-if not firebase_admin._apps:
-    try:
-        cred = credentials.Certificate('firebase_key.json')
-        firebase_admin.initialize_app(cred, {'databaseURL': DB_URL})
-        logger.info("✅ Firebase initialized")
-    except Exception as e:
-        logger.error(f"❌ Firebase error: {e}")
-
-# --- FLASK ---
 app = Flask(__name__)
 
-@app.route('/')
-def index():
-    return "Bot is running. Check Render logs!"
-
-# --- TELEGRAM LOGIC ---
-async def telegram_worker():
-    logger.info("🎬 Starting Telegram Worker...")
-    client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
-    
+# 3. Инициализация Firebase с защитой от ошибок JWT
+def init_firebase():
     try:
-        await client.connect()
-        if not await client.is_user_authorized():
-            logger.error("❌ NOT AUTHORIZED! Session file is missing or invalid.")
-            return
-
-        logger.info("✅ Telegram authorized!")
+        # Пробуем взять конфиг из переменной окружения Render
+        config_raw = os.environ.get('FIREBASE_CONFIG')
         
-        while True:
-            logger.info("🔍 Syncing chats...")
-            chats_data = {}
-            async for dialog in client.iter_dialogs(limit=50):
-                chats_data[str(dialog.id)] = {
-                    "name": str(dialog.name),
-                    "unread": dialog.unread_count
-                }
-            
-            db.reference('chats').set(chats_data)
-            db.reference('status').set({"last_sync": "success"})
-            logger.info(f"🚀 Synced {len(chats_data)} chats.")
-            
-            await asyncio.sleep(60)
-            
+        if config_raw:
+            config_dict = json.loads(config_raw)
+            # Критически важно: чистим переносы строк в ключе
+            if 'private_key' in config_dict:
+                config_dict['private_key'] = config_dict['private_key'].replace('\\n', '\n')
+            cred = credentials.Certificate(config_dict)
+            logger.info("✅ Firebase: инициализация через Environment Variable")
+        else:
+            # Если переменной нет, ищем файл
+            cred = credentials.Certificate('firebase_key.json')
+            logger.info("✅ Firebase: инициализация через файл")
+
+        firebase_admin.initialize_app(cred, {'databaseURL': DATABASE_URL})
+        return True
     except Exception as e:
-        logger.error(f"❌ Worker error: {e}")
+        logger.error(f"❌ Firebase Error: {e}")
+        return False
 
-# --- RUN EVERYTHING ---
-async def main():
-    # Запускаем Flask в фоне (через асинхронную обертку)
-    from werkzeug.serving import make_server
-    server = make_server('0.0.0.0', 10000, app)
-    
-    logger.info("🌐 Web server starting on port 10000...")
-    
-    # Запускаем и веб-сервер, и бота одновременно
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, server.serve_forever)
-    
-    await telegram_worker()
+# 4. Telegram Worker
+async def telegram_worker():
+    if not init_firebase():
+        logger.error("🚫 Останавливаю воркер: Firebase не запущен")
+        return
 
+    client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
+
+    @client.on(events.NewMessage)
+    async def handler(event):
+        try:
+            # Пример записи сообщения в базу
+            ref = db.reference('messages')
+            ref.push({
+                'text': event.raw_text,
+                'sender_id': event.sender_id,
+                'chat_id': event.chat_id
+            })
+            logger.info(f"📩 Сообщение сохранено: {event.raw_text[:20]}...")
+        except Exception as e:
+            logger.error(f"❌ Ошибка записи в DB: {e}")
+
+    logger.info("🎬 Запуск Telegram клиента...")
+    await client.start()
+    logger.info("✅ Telegram авторизован!")
+    await client.run_until_disconnected()
+
+# 5. Web Server (Flask)
+@app.route('/')
+def health_check():
+    return "Service is running", 200
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+# 6. Точка входа
 if __name__ == '__main__':
-    asyncio.run(main())
+    # Запускаем Flask в отдельном потоке
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+
+    # Запускаем Telegram в основном потоке через asyncio
+    try:
+        asyncio.run(telegram_worker())
+    except KeyboardInterrupt:
+        pass

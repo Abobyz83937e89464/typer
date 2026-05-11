@@ -9,7 +9,7 @@ from threading import Thread
 from telethon import TelegramClient
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
-logger = logging.getLogger("ULTRASONIC_TYPER")
+logger = logging.getLogger("SUPER_TYPER")
 
 # --- КОНФИГУРАЦИЯ ---
 API_ID = 38696066
@@ -22,7 +22,7 @@ messages_list = []
 current_index = 0
 
 @app.route('/')
-def health(): return "SYSTEM: OVERCLOCK", 200
+def health(): return "STATUS: OVERCLOCK_ACTIVE", 200
 
 def load_messages():
     global messages_list
@@ -32,22 +32,33 @@ def load_messages():
 
 async def bot_worker():
     client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
-    await client.connect()
-    if not await client.is_user_authorized():
-        logger.error("🚨 SESSION ERROR")
-        return
+    
+    # Функция для безопасного подключения
+    async def connect_client():
+        if not client.is_connected():
+            await client.connect()
+        if not await client.is_user_authorized():
+            logger.error("🚨 SESSION EXPIRED")
+            return False
+        return True
+
+    if not await connect_client(): return
     
     load_messages()
     last_trigger = None
     
-    # Используем одну асинхронную сессию для всех запросов
     async with aiohttp.ClientSession() as session:
-        logger.info("🚀 ГИПЕРЗВУК ЗАПУЩЕН")
+        logger.info("🚀 ГИПЕРЗВУК С АВТОРЕКОННЕКТОМ ЗАПУЩЕН")
 
         while True:
             try:
-                # Опрос базы каждые 0.1 сек (максимальный разгон)
-                async with session.get(f"{DB_URL}/commands.json", timeout=0.5) as resp:
+                # Проверка связи перед каждым циклом
+                if not client.is_connected():
+                    logger.info("🔄 Переподключение к Telegram...")
+                    await client.connect()
+
+                # Опрос базы
+                async with session.get(f"{DB_URL}/commands.json", timeout=1.0) as resp:
                     data = await resp.json()
                 
                 if data:
@@ -62,26 +73,30 @@ async def bot_worker():
                             msg = messages_list[current_index]
                             current_index += 1
                             
-                            # Мгновенный выстрел в фон без ожидания
+                            # Отправляем напрямую (await), чтобы видеть ошибки сразу
                             try:
-                                asyncio.create_task(client.send_message(int(t_id), msg))
-                                logger.info(f"⚡ [0.1s] SENT -> {t_id}")
-                            except:
-                                # Если юзер новый, придется подождать поиска
+                                await client.send_message(int(t_id), msg)
+                                logger.info(f"⚡ [HIT] -> {t_id}")
+                            except ValueError:
+                                # Если юзер новый
                                 entity = await client.get_entity(int(t_id))
                                 await client.send_message(entity, msg)
+                            except ConnectionError:
+                                logger.warning("⚠️ Потеря связи, пробую переподключиться...")
+                                await client.connect()
 
-                # Редкая синхронизация (раз в 100 циклов), чтобы не мешать скорости
+                # Синхронизация списка чатов
                 if random.random() < 0.01:
                     dialogs = await client.get_dialogs(limit=10)
                     chat_map = {str(d.id): {"name": d.name} for d in dialogs if d.name}
-                    async with session.put(f"{DB_URL}/chats/list.json", json=chat_map) as r:
-                        pass
+                    await session.put(f"{DB_URL}/chats/list.json", json=chat_map)
 
-            except Exception:
-                pass # Игнорим любые ошибки сети ради скорости
+            except Exception as e:
+                if "disconnected" in str(e).lower():
+                    try: await client.connect()
+                    except: pass
             
-            await asyncio.sleep(0.1) # ВОТ ОНО — 100 миллисекунд
+            await asyncio.sleep(0.2) # Вернул 0.2с для стабильности, 0.1с часто рвет связь
 
 def start_bot():
     loop = asyncio.new_event_loop()

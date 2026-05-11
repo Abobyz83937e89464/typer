@@ -1,4 +1,5 @@
-telethon
 firebase-admin
+telethon
 flask
 gunicorn
+cryptography

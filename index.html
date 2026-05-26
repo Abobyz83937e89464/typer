@@ -50,7 +50,10 @@
             gap: 8px;
             max-height: 240px;
             overflow-y: auto;
+            padding-right: 5px; /* Для скроллбара */
         }
+        .recent-list::-webkit-scrollbar { width: 5px; }
+        .recent-list::-webkit-scrollbar-thumb { background: #333; }
         .recent-item {
             padding: 8px 10px;
             background: #0f0f0f;
@@ -71,9 +74,10 @@
             color: #4f8f5b;
             font-size: 11px;
             margin-bottom: 3px;
+            font-weight: bold;
+            text-transform: uppercase;
         }
         
-        /* Кнопка таргета */
         #targetToggleBtn {
             width: 100%;
             padding: 10px;
@@ -101,7 +105,7 @@
 
 <div class="main">
     <div class="recent-box">
-        <div class="recent-title">Последние сообщения (Реальные)</div>
+        <div class="recent-title">История чата (Live)</div>
         <div class="recent-list" id="recentMessages">
             <div style="color: #444; font-size: 11px;">Ожидание выбора чата...</div>
         </div>
@@ -130,22 +134,24 @@
 
     const targetToggleBtn = document.getElementById('targetToggleBtn');
 
-    // Логика кнопки таргета
+    // Кнопка переключения постоянного таргета
     targetToggleBtn.onclick = () => {
         isTargeting = !isTargeting;
+        db.ref('commands/target_locked').set(isTargeting); // Передаем питону состояние
+        
         if (isTargeting) {
             targetToggleBtn.classList.add('active-target');
-            targetToggleBtn.innerText = "🎯 ТАРГЕТ: ВКЛ (ВЫБЕРИТЕ СООБЩЕНИЕ)";
+            targetToggleBtn.innerText = "🎯 ТАРГЕТ: ВКЛ (ВЫБЕРИТЕ ЦЕЛЬ)";
         } else {
             targetToggleBtn.classList.remove('active-target');
             targetToggleBtn.innerText = "🎯 ТАРГЕТ: ВЫКЛ";
             targetMsgId = null;
-            db.ref('commands/reply_to').remove(); // Очищаем реплай в базе
+            db.ref('commands/reply_to').remove();
             document.querySelectorAll('.recent-item').forEach(el => el.classList.remove('selected-msg'));
         }
     };
 
-    // Слушаем реальные сообщения из Python
+    // Слушаем реальные сообщения из Python (теперь сверху старые, снизу новые)
     db.ref('chats/current_messages').on('value', (snap) => {
         const msgs = snap.val();
         const box = document.getElementById('recentMessages');
@@ -156,28 +162,31 @@
                 const div = document.createElement('div');
                 div.className = 'recent-item' + (targetMsgId === msg.id ? ' selected-msg' : '');
                 div.innerHTML = `
-                    <div class="meta">ID: ${msg.id}</div>
+                    <div class="meta">${msg.sender}:</div>
                     <div>${msg.text}</div>
                 `;
                 
                 div.onclick = () => {
+                    targetMsgId = msg.id;
+                    db.ref('commands/reply_to').set(msg.id); 
+                    
+                    document.querySelectorAll('.recent-item').forEach(el => el.classList.remove('selected-msg'));
+                    div.classList.add('selected-msg');
+                    
                     if (isTargeting) {
-                        targetMsgId = msg.id;
-                        db.ref('commands/reply_to').set(msg.id); // Шлем питону ID сообщения
-                        
-                        document.querySelectorAll('.recent-item').forEach(el => el.classList.remove('selected-msg'));
-                        div.classList.add('selected-msg');
-                        targetToggleBtn.innerText = "🎯 ТАРГЕТ: ВКЛ (ЦЕЛЬ ЗАФИКСИРОВАНА)";
+                        targetToggleBtn.innerText = "🎯 ТАРГЕТ ЗАЛОЧЕН НА: " + msg.sender;
                     }
                 };
                 box.appendChild(div);
             });
+            // Автоскролл в самый низ к новым сообщениям
+            box.scrollTop = box.scrollHeight;
         } else {
             box.innerHTML = '<div style="color: #444; font-size: 11px;">Нет сообщений...</div>';
         }
     });
 
-    // Слушаем список чатов
+    // Список чатов
     db.ref('chats/list').on('value', (snap) => {
         const chats = snap.val();
         const listDiv = document.getElementById('chatList');
@@ -193,7 +202,6 @@
                     document.getElementById('sendBtn').disabled = false;
                     db.ref('commands/target_id').set(id);
                     
-                    // Если сменили чат, вырубаем старый таргет автоматически
                     if (isTargeting) {
                         targetToggleBtn.click(); 
                     }
@@ -210,6 +218,14 @@
     document.getElementById('sendBtn').onclick = () => {
         if (selectedId) {
             db.ref('commands/trigger').set(Date.now());
+            
+            // Если таргет выключен (одиночный выстрел) - сбрасываем выделение в интерфейсе
+            if (!isTargeting && targetMsgId) {
+                targetMsgId = null;
+                setTimeout(() => {
+                    document.querySelectorAll('.recent-item').forEach(el => el.classList.remove('selected-msg'));
+                }, 300); // Небольшая задержка, чтобы Питон успел прочитать ID
+            }
         }
     };
 </script>

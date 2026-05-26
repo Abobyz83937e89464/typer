@@ -12,7 +12,8 @@
         .chat-item { padding: 12px; border-bottom: 1px solid #111; cursor: pointer; color: #666; font-size: 13px; }
         .chat-item:hover { background: #111; color: #eee; }
         .chat-item.active { background: #1a1a1a; color: #00ff41; border-left: 3px solid #00ff41; }
-        .main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+        
         #sendBtn {
             width: 220px; height: 220px; border-radius: 50%; border: none;
             background: radial-gradient(circle, #ff1111 0%, #880000 100%);
@@ -22,6 +23,76 @@
         #sendBtn:active { transform: scale(0.95); box-shadow: 0 0 10px rgba(255, 0, 0, 0.5); }
         #sendBtn:disabled { filter: grayscale(1); opacity: 0.3; cursor: not-allowed; }
         .status { margin-bottom: 20px; font-size: 14px; text-transform: uppercase; letter-spacing: 2px; }
+
+        .recent-box {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            width: 340px;
+            background: rgba(10, 10, 10, 0.95);
+            border: 1px solid #222;
+            box-shadow: 0 0 18px rgba(0, 255, 65, 0.08);
+            padding: 14px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .recent-title {
+            font-size: 12px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #00ff41;
+        }
+        .recent-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 240px;
+            overflow-y: auto;
+        }
+        .recent-item {
+            padding: 8px 10px;
+            background: #0f0f0f;
+            border: 1px solid #171717;
+            color: #b7ffbf;
+            font-size: 12px;
+            line-height: 1.35;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .recent-item:hover { border-color: #333; }
+        .recent-item.selected-msg {
+            background: rgba(0, 255, 65, 0.1);
+            border-color: #00ff41;
+            box-shadow: inset 0 0 10px rgba(0, 255, 65, 0.2);
+        }
+        .recent-item .meta {
+            color: #4f8f5b;
+            font-size: 11px;
+            margin-bottom: 3px;
+        }
+        
+        /* Кнопка таргета */
+        #targetToggleBtn {
+            width: 100%;
+            padding: 10px;
+            background: #111;
+            color: #555;
+            border: 1px solid #333;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: 0.3s;
+        }
+        #targetToggleBtn.active-target {
+            background: #00ff41;
+            color: #000;
+            border-color: #00ff41;
+            box-shadow: 0 0 15px rgba(0, 255, 65, 0.4);
+        }
     </style>
 </head>
 <body>
@@ -29,6 +100,14 @@
 <div class="sidebar" id="chatList"></div>
 
 <div class="main">
+    <div class="recent-box">
+        <div class="recent-title">Последние сообщения (Реальные)</div>
+        <div class="recent-list" id="recentMessages">
+            <div style="color: #444; font-size: 11px;">Ожидание выбора чата...</div>
+        </div>
+        <button id="targetToggleBtn">🎯 ТАРГЕТ: ВЫКЛ</button>
+    </div>
+
     <div class="status" id="targetName">ВЫБЕРИТЕ ЧАТ</div>
     <button id="sendBtn" disabled>ПУСК</button>
 </div>
@@ -44,9 +123,61 @@
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
+    
     let selectedId = null;
+    let isTargeting = false;
+    let targetMsgId = null;
 
-    // Слушаем список чатов в реальном времени
+    const targetToggleBtn = document.getElementById('targetToggleBtn');
+
+    // Логика кнопки таргета
+    targetToggleBtn.onclick = () => {
+        isTargeting = !isTargeting;
+        if (isTargeting) {
+            targetToggleBtn.classList.add('active-target');
+            targetToggleBtn.innerText = "🎯 ТАРГЕТ: ВКЛ (ВЫБЕРИТЕ СООБЩЕНИЕ)";
+        } else {
+            targetToggleBtn.classList.remove('active-target');
+            targetToggleBtn.innerText = "🎯 ТАРГЕТ: ВЫКЛ";
+            targetMsgId = null;
+            db.ref('commands/reply_to').remove(); // Очищаем реплай в базе
+            document.querySelectorAll('.recent-item').forEach(el => el.classList.remove('selected-msg'));
+        }
+    };
+
+    // Слушаем реальные сообщения из Python
+    db.ref('chats/current_messages').on('value', (snap) => {
+        const msgs = snap.val();
+        const box = document.getElementById('recentMessages');
+        box.innerHTML = "";
+        
+        if (msgs && Array.isArray(msgs)) {
+            msgs.forEach((msg) => {
+                const div = document.createElement('div');
+                div.className = 'recent-item' + (targetMsgId === msg.id ? ' selected-msg' : '');
+                div.innerHTML = `
+                    <div class="meta">ID: ${msg.id}</div>
+                    <div>${msg.text}</div>
+                `;
+                
+                div.onclick = () => {
+                    if (isTargeting) {
+                        targetMsgId = msg.id;
+                        db.ref('commands/reply_to').set(msg.id); // Шлем питону ID сообщения
+                        
+                        document.querySelectorAll('.recent-item').forEach(el => el.classList.remove('selected-msg'));
+                        div.classList.add('selected-msg');
+                        targetToggleBtn.innerText = "🎯 ТАРГЕТ: ВКЛ (ЦЕЛЬ ЗАФИКСИРОВАНА)";
+                    }
+                };
+                box.appendChild(div);
+            });
+        } else {
+            box.innerHTML = '<div style="color: #444; font-size: 11px;">Нет сообщений...</div>';
+        }
+    });
+
+    // Слушаем список чатов
     db.ref('chats/list').on('value', (snap) => {
         const chats = snap.val();
         const listDiv = document.getElementById('chatList');
@@ -61,7 +192,12 @@
                     document.getElementById('targetName').innerText = "ЦЕЛЬ: " + chats[id].name;
                     document.getElementById('sendBtn').disabled = false;
                     db.ref('commands/target_id').set(id);
-                    // Перерисовка активного класса
+                    
+                    // Если сменили чат, вырубаем старый таргет автоматически
+                    if (isTargeting) {
+                        targetToggleBtn.click(); 
+                    }
+
                     document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('active'));
                     div.classList.add('active');
                 };
@@ -70,6 +206,7 @@
         }
     });
 
+    // Кнопка пуска
     document.getElementById('sendBtn').onclick = () => {
         if (selectedId) {
             db.ref('commands/trigger').set(Date.now());

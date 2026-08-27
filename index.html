@@ -13,15 +13,15 @@
         .chat-item:hover { background: #111; color: #eee; }
         .chat-item.active { background: #1a1a1a; color: #00ff41; border-left: 3px solid #00ff41; }
         .main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
-        
+
         .btn-container { display: flex; gap: 30px; margin-top: 10px; }
-        
+
         .action-btn {
             width: 180px; height: 180px; border-radius: 50%; border: none;
             color: #fff; font-size: 24px; font-weight: bold; cursor: pointer;
             transition: 0.1s; display: flex; justify-content: center; align-items: center;
         }
-        
+
         #sendBtn {
             background: radial-gradient(circle, #ff1111 0%, #880000 100%);
             box-shadow: 0 0 40px rgba(255, 0, 0, 0.2);
@@ -34,9 +34,9 @@
         .action-btn:active { transform: scale(0.95); }
         #sendBtn:active { box-shadow: 0 0 10px rgba(255, 0, 0, 0.5); }
         #laughBtn:active { box-shadow: 0 0 10px rgba(138, 43, 226, 0.5); }
-        
+
         .action-btn:disabled { filter: grayscale(1); opacity: 0.3; cursor: not-allowed; box-shadow: none; }
-        
+
         .status { margin-bottom: 30px; font-size: 16px; text-transform: uppercase; letter-spacing: 2px; }
 
         .recent-box {
@@ -52,7 +52,7 @@
         .recent-item:hover { border-color: #333; }
         .recent-item.selected-msg { background: rgba(0, 255, 65, 0.1); border-color: #00ff41; box-shadow: inset 0 0 10px rgba(0, 255, 65, 0.2); }
         .recent-item .meta { color: #4f8f5b; font-size: 11px; margin-bottom: 3px; font-weight: bold; text-transform: uppercase; }
-        
+
         #targetToggleBtn {
             width: 100%; padding: 10px; background: #111; color: #555; border: 1px solid #333;
             font-family: 'Courier New', monospace; font-size: 12px; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: 0.3s;
@@ -82,19 +82,16 @@
 
 <script>
     const firebaseConfig = {
-    apiKey: "AIzaSyAOt8uJppnWr5CSQUX9rO2gmo77P_SQM4Y",
-    authDomain: "typing-939e2.firebaseapp.com",
-    projectId: "typing-939e2",
-    databaseURL: "https://typing-939e2-default-rtdb.firebaseio.com/",
-    storageBucket: "typing-939e2.firebasestorage.app",
-    messagingSenderId: "707148868078",
-    appId: "1:707148868078:web:96873ff3eef04297e9c6ff",
-    measurementId: "G-TZ4XEXFY0J"
+    apiKey: "AIzaSyB-T0mESVKzIlCOfdeaJCrx_BRLyTYCQV4",
+    authDomain: "sspupsij-a248c.firebaseapp.com",
+    projectId: "sspupsij-a248c",
+    databaseURL: "https://sspupsij-a248c-default-rtdb.firebaseio.com/",
+    appId: "1:447023795025:web:8cfa7576d5e7351ba1a170"
 };
 
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
-    
+
     let selectedId = null;
     let isTargeting = false;
     let targetMsgId = null;
@@ -103,8 +100,8 @@
 
     targetToggleBtn.onclick = () => {
         isTargeting = !isTargeting;
-        db.ref('commands/target_locked').set(isTargeting); 
-        
+        db.ref('commands/target_locked').set(isTargeting);
+
         if (isTargeting) {
             targetToggleBtn.classList.add('active-target');
             targetToggleBtn.innerText = "🎯 ТАРГЕТ: ВКЛ (ВЫБЕРИТЕ ЦЕЛЬ)";
@@ -121,7 +118,7 @@
         const msgs = snap.val();
         const box = document.getElementById('recentMessages');
         box.innerHTML = "";
-        
+
         if (msgs && Array.isArray(msgs)) {
             msgs.forEach((msg) => {
                 const div = document.createElement('div');
@@ -130,14 +127,14 @@
                     <div class="meta">${msg.sender}:</div>
                     <div>${msg.text}</div>
                 `;
-                
+
                 div.onclick = () => {
                     targetMsgId = msg.id;
-                    db.ref('commands/reply_to').set(msg.id); 
-                    
+                    db.ref('commands/reply_to').set(msg.id);
+
                     document.querySelectorAll('.recent-item').forEach(el => el.classList.remove('selected-msg'));
                     div.classList.add('selected-msg');
-                    
+
                     if (isTargeting) {
                         targetToggleBtn.innerText = "🎯 ТАРГЕТ ЗАЛОЧЕН НА: " + msg.sender;
                     }
@@ -167,8 +164,8 @@
                     document.getElementById('sendBtn').disabled = false;
                     document.getElementById('laughBtn').disabled = false;
                     db.ref('commands/target_id').set(id);
-                    
-                    if (isTargeting) targetToggleBtn.click(); 
+
+                    if (isTargeting) targetToggleBtn.click();
 
                     document.querySelectorAll('.chat-item').forEach(el => el.classList.remove('active'));
                     div.classList.add('active');
@@ -183,9 +180,14 @@
     function handleSingleShot() {
         if (!isTargeting && targetMsgId) {
             targetMsgId = null;
+
+            db.ref('commands/reply_to').remove();
+
             setTimeout(() => {
-                document.querySelectorAll('.recent-item').forEach(el => el.classList.remove('selected-msg'));
-            }, 300); 
+                document.querySelectorAll('.recent-item').forEach(
+                    el => el.classList.remove('selected-msg')
+                );
+            }, 300);
         }
     }
 
